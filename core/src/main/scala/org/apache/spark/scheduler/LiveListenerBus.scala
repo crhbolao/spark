@@ -27,12 +27,12 @@ import org.apache.spark.internal.config._
 import org.apache.spark.util.Utils
 
 /**
- * Asynchronously passes SparkListenerEvents to registered SparkListeners.
- *
- * Until `start()` is called, all posted events are only buffered. Only after this listener bus
- * has started will events be actually propagated to all attached listeners. This listener bus
- * is stopped when `stop()` is called, and it will drop further events after stopping.
- */
+  * Asynchronously passes SparkListenerEvents to registered SparkListeners.
+  *
+  * Until `start()` is called, all posted events are only buffered. Only after this listener bus
+  * has started will events be actually propagated to all attached listeners. This listener bus
+  * is stopped when `stop()` is called, and it will drop further events after stopping.
+  */
 private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends SparkListenerBus {
 
   self =>
@@ -42,6 +42,10 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   // Cap the capacity of the event queue so we get an explicit error (rather than
   // an OOM exception) if it's perpetually being added to more quickly than it's being drained.
   private lazy val EVENT_QUEUE_CAPACITY = validateAndGetQueueSize()
+
+  /**
+    * SparkListenerEvent时间的阻塞队列，默认大小由 spark.scheduler.listenerbus.eventqueue.size 进行配置
+    */
   private lazy val eventQueue = new LinkedBlockingQueue[SparkListenerEvent](EVENT_QUEUE_CAPACITY)
 
   private def validateAndGetQueueSize(): Int = {
@@ -53,36 +57,61 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   }
 
   // Indicate if `start()` is called
+  /**
+    * 标记 LiveListenerBus 的启动状态
+    */
   private val started = new AtomicBoolean(false)
   // Indicate if `stop()` is called
+  /**
+    * 标记 LiveListenerBus 的 停止状态
+    */
   private val stopped = new AtomicBoolean(false)
 
   /** A counter for dropped events. It will be reset every time we log it. */
+  /**
+    * 使用AtomicLong对删除的事件进行统计，日志打印一次重置为0
+    */
   private val droppedEventsCounter = new AtomicLong(0L)
 
   /** When `droppedEventsCounter` was logged last time in milliseconds. */
+  /**
+    * 用来记录最后一次日志打印 droppedEventsCounter 的时间戳
+    */
   @volatile private var lastReportTimestamp = 0L
 
   // Indicate if we are processing some event
   // Guarded by `self`
+  /**
+    * 用来标记当前正有事件被ListenerThread线程处理。
+    */
   private var processingEvent = false
 
+  /**
+    * 用于标记是否由于eventQuene已满，导致新的事件被删除。
+    */
   private val logDroppedEvent = new AtomicBoolean(false)
 
   // A counter that represents the number of events produced and consumed in the queue
+  /**
+    * 计数器--用来表名quene中事件生产和消费的数量
+    */
   private val eventLock = new Semaphore(0)
 
+  /**
+    * 处理事件的线程，用于异步处理eventQueue中的事件
+    */
   private val listenerThread = new Thread(name) {
     setDaemon(true)
+
     override def run(): Unit = Utils.tryOrStopSparkContext(sparkContext) {
       LiveListenerBus.withinListenerThread.withValue(true) {
         while (true) {
-          eventLock.acquire()
+          eventLock.acquire() // 不断获取信号量，说明还有事件没有处理
           self.synchronized {
-            processingEvent = true
+            processingEvent = true // 用来标记当前正有事件被ListenerThread线程处理。
           }
           try {
-            val event = eventQueue.poll
+            val event = eventQueue.poll // 从eventQueue中获取信号量
             if (event == null) {
               // Get out of the while loop and shutdown the daemon thread
               if (!stopped.get) {
@@ -91,7 +120,7 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
               }
               return
             }
-            postToAll(event)
+            postToAll(event) // 处理事件
           } finally {
             self.synchronized {
               processingEvent = false
@@ -103,13 +132,13 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   }
 
   /**
-   * Start sending events to attached listeners.
-   *
-   * This first sends out all buffered events posted before this listener bus has started, then
-   * listens for any additional events asynchronously while the listener bus is still running.
-   * This should only be called once.
-   *
-   */
+    * Start sending events to attached listeners.
+    *
+    * This first sends out all buffered events posted before this listener bus has started, then
+    * listens for any additional events asynchronously while the listener bus is still running.
+    * This should only be called once.
+    *
+    */
   def start(): Unit = {
     if (started.compareAndSet(false, true)) {
       listenerThread.start()
@@ -118,13 +147,18 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
     }
   }
 
+  /**
+    * 向eventQuene中添加事件
+    *
+    * @param event
+    */
   def post(event: SparkListenerEvent): Unit = {
-    if (stopped.get) {
+    if (stopped.get) { // 判断livelistenerBus是否已经处于停止状态
       // Drop further events to make `listenerThread` exit ASAP
       logError(s"$name has already stopped! Dropping event $event")
       return
     }
-    val eventAdded = eventQueue.offer(event)
+    val eventAdded = eventQueue.offer(event) //向eventQuene中添加事件
     if (eventAdded) {
       eventLock.release()
     } else {
@@ -151,11 +185,11 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   }
 
   /**
-   * For testing only. Wait until there are no more events in the queue, or until the specified
-   * time has elapsed. Throw `TimeoutException` if the specified time elapsed before the queue
-   * emptied.
-   * Exposed for testing.
-   */
+    * For testing only. Wait until there are no more events in the queue, or until the specified
+    * time has elapsed. Throw `TimeoutException` if the specified time elapsed before the queue
+    * emptied.
+    * Exposed for testing.
+    */
   @throws(classOf[TimeoutException])
   def waitUntilEmpty(timeoutMillis: Long): Unit = {
     val finishTime = System.currentTimeMillis + timeoutMillis
@@ -171,23 +205,25 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   }
 
   /**
-   * For testing only. Return whether the listener daemon thread is still alive.
-   * Exposed for testing.
-   */
+    * For testing only. Return whether the listener daemon thread is still alive.
+    * Exposed for testing.
+    */
   def listenerThreadIsAlive: Boolean = listenerThread.isAlive
 
   /**
-   * Return whether the event queue is empty.
-   *
-   * The use of synchronized here guarantees that all events that once belonged to this queue
-   * have already been processed by all attached listeners, if this returns true.
-   */
-  private def queueIsEmpty: Boolean = synchronized { eventQueue.isEmpty && !processingEvent }
+    * Return whether the event queue is empty.
+    *
+    * The use of synchronized here guarantees that all events that once belonged to this queue
+    * have already been processed by all attached listeners, if this returns true.
+    */
+  private def queueIsEmpty: Boolean = synchronized {
+    eventQueue.isEmpty && !processingEvent
+  }
 
   /**
-   * Stop the listener bus. It will wait until the queued events have been processed, but drop the
-   * new events after stopping.
-   */
+    * Stop the listener bus. It will wait until the queued events have been processed, but drop the
+    * new events after stopping.
+    */
   def stop(): Unit = {
     if (!started.get()) {
       throw new IllegalStateException(s"Attempted to stop $name that has not yet started!")
@@ -203,11 +239,11 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   }
 
   /**
-   * If the event queue exceeds its capacity, the new events will be dropped. The subclasses will be
-   * notified with the dropped events.
-   *
-   * Note: `onDropEvent` can be called in any thread.
-   */
+    * If the event queue exceeds its capacity, the new events will be dropped. The subclasses will be
+    * notified with the dropped events.
+    *
+    * Note: `onDropEvent` can be called in any thread.
+    */
   def onDropEvent(event: SparkListenerEvent): Unit = {
     if (logDroppedEvent.compareAndSet(false, true)) {
       // Only log the following message once to avoid duplicated annoying logs.

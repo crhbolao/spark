@@ -26,32 +26,50 @@ import scala.util.control.NonFatal
 import org.apache.spark.internal.Logging
 
 /**
- * An event bus which posts events to its listeners.
- */
+  * An event bus which posts events to its listeners.
+  */
 private[spark] trait ListenerBus[L <: AnyRef, E] extends Logging {
 
   // Marked `private[spark]` for access in tests.
+  /**
+    * 用于维护所有注册的监听器
+    */
   private[spark] val listeners = new CopyOnWriteArrayList[L]
 
   /**
-   * Add a listener to listen events. This method is thread-safe and can be called in any thread.
-   */
+    * Add a listener to listen events. This method is thread-safe and can be called in any thread.
+    */
+  /**
+    * 向listeners中添加监听器
+    *
+    * @param listener
+    */
   final def addListener(listener: L): Unit = {
     listeners.add(listener)
   }
 
   /**
-   * Remove a listener and it won't receive any events. This method is thread-safe and can be called
-   * in any thread.
-   */
+    * Remove a listener and it won't receive any events. This method is thread-safe and can be called
+    * in any thread.
+    */
+  /**
+    * 从listeners中移除对应的监听器
+    *
+    * @param listener
+    */
   final def removeListener(listener: L): Unit = {
     listeners.remove(listener)
   }
 
   /**
-   * Post the event to all registered listeners. The `postToAll` caller should guarantee calling
-   * `postToAll` in the same thread for all events.
-   */
+    * Post the event to all registered listeners. The `postToAll` caller should guarantee calling
+    * `postToAll` in the same thread for all events.
+    */
+  /**
+    * 将时间发送给所有的监听器
+    *
+    * @param event
+    */
   final def postToAll(event: E): Unit = {
     // JavaConverters can create a JIterableWrapper if we use asScala.
     // However, this method will be called frequently. To avoid the wrapper cost, here we use
@@ -69,9 +87,15 @@ private[spark] trait ListenerBus[L <: AnyRef, E] extends Logging {
   }
 
   /**
-   * Post an event to the specified listener. `onPostEvent` is guaranteed to be called in the same
-   * thread for all listeners.
-   */
+    * Post an event to the specified listener. `onPostEvent` is guaranteed to be called in the same
+    * thread for all listeners.
+    */
+  /**
+    * 将事件投递给指定的监听器
+    *
+    * @param listener
+    * @param event
+    */
   protected def doPostEvent(listener: L, event: E): Unit
 
   private[spark] def findListenersByClass[T <: L : ClassTag](): Seq[T] = {
