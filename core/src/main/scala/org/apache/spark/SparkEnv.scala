@@ -43,31 +43,31 @@ import org.apache.spark.storage._
 import org.apache.spark.util.{RpcUtils, Utils}
 
 /**
- * :: DeveloperApi ::
- * Holds all the runtime environment objects for a running Spark instance (either master or worker),
- * including the serializer, RpcEnv, block manager, map output tracker, etc. Currently
- * Spark code finds the SparkEnv through a global variable, so all the threads can access the same
- * SparkEnv. It can be accessed by SparkEnv.get (e.g. after creating a SparkContext).
- *
- * NOTE: This is not intended for external use. This is exposed for Shark and may be made private
- *       in a future release.
- */
+  * :: DeveloperApi ::
+  * Holds all the runtime environment objects for a running Spark instance (either master or worker),
+  * including the serializer, RpcEnv, block manager, map output tracker, etc. Currently
+  * Spark code finds the SparkEnv through a global variable, so all the threads can access the same
+  * SparkEnv. It can be accessed by SparkEnv.get (e.g. after creating a SparkContext).
+  *
+  * NOTE: This is not intended for external use. This is exposed for Shark and may be made private
+  * in a future release.
+  */
 @DeveloperApi
-class SparkEnv (
-    val executorId: String,
-    private[spark] val rpcEnv: RpcEnv,
-    val serializer: Serializer,
-    val closureSerializer: Serializer,
-    val serializerManager: SerializerManager,
-    val mapOutputTracker: MapOutputTracker,
-    val shuffleManager: ShuffleManager,
-    val broadcastManager: BroadcastManager,
-    val blockManager: BlockManager,
-    val securityManager: SecurityManager,
-    val metricsSystem: MetricsSystem,
-    val memoryManager: MemoryManager,
-    val outputCommitCoordinator: OutputCommitCoordinator,
-    val conf: SparkConf) extends Logging {
+class SparkEnv(
+                val executorId: String,
+                private[spark] val rpcEnv: RpcEnv,
+                val serializer: Serializer,
+                val closureSerializer: Serializer,
+                val serializerManager: SerializerManager,
+                val mapOutputTracker: MapOutputTracker,
+                val shuffleManager: ShuffleManager,
+                val broadcastManager: BroadcastManager,
+                val blockManager: BlockManager,
+                val securityManager: SecurityManager,
+                val metricsSystem: MetricsSystem,
+                val memoryManager: MemoryManager,
+                val outputCommitCoordinator: OutputCommitCoordinator,
+                val conf: SparkConf) extends Logging {
 
   private[spark] var isStopped = false
   private val pythonWorkers = mutable.HashMap[(String, Map[String, String]), PythonWorkerFactory]()
@@ -145,27 +145,39 @@ object SparkEnv extends Logging {
   }
 
   /**
-   * Returns the SparkEnv.
-   */
+    * Returns the SparkEnv.
+    */
   def get: SparkEnv = {
     env
   }
 
   /**
-   * Create a SparkEnv for the driver.
-   */
+    * Create a SparkEnv for the driver.
+    */
   private[spark] def createDriverEnv(
-      conf: SparkConf,
-      isLocal: Boolean,
-      listenerBus: LiveListenerBus,
-      numCores: Int,
-      mockOutputCommitCoordinator: Option[OutputCommitCoordinator] = None): SparkEnv = {
+                                      conf: SparkConf,
+                                      isLocal: Boolean,
+                                      listenerBus: LiveListenerBus,
+                                      numCores: Int,
+                                      mockOutputCommitCoordinator: Option[OutputCommitCoordinator] = None): SparkEnv = {
     assert(conf.contains(DRIVER_HOST_ADDRESS),
       s"${DRIVER_HOST_ADDRESS.key} is not set on the driver!")
     assert(conf.contains("spark.driver.port"), "spark.driver.port is not set on the driver!")
+    /**
+      * Driver实例的host。
+      */
     val bindAddress = conf.get(DRIVER_BIND_ADDRESS)
+    /**
+      * Driver对外宣称的实例
+      */
     val advertiseAddress = conf.get(DRIVER_HOST_ADDRESS)
+    /**
+      * Driver实例的端口
+      */
     val port = conf.get("spark.driver.port").toInt
+    /**
+      * Io加密的秘钥
+      */
     val ioEncryptionKey = if (conf.get(IO_ENCRYPTION_ENABLED)) {
       Some(CryptoStreamUtils.createKey(conf))
     } else {
@@ -186,17 +198,17 @@ object SparkEnv extends Logging {
   }
 
   /**
-   * Create a SparkEnv for an executor.
-   * In coarse-grained mode, the executor provides an RpcEnv that is already instantiated.
-   */
+    * Create a SparkEnv for an executor.
+    * In coarse-grained mode, the executor provides an RpcEnv that is already instantiated.
+    */
   private[spark] def createExecutorEnv(
-      conf: SparkConf,
-      executorId: String,
-      hostname: String,
-      port: Int,
-      numCores: Int,
-      ioEncryptionKey: Option[Array[Byte]],
-      isLocal: Boolean): SparkEnv = {
+                                        conf: SparkConf,
+                                        executorId: String,
+                                        hostname: String,
+                                        port: Int,
+                                        numCores: Int,
+                                        ioEncryptionKey: Option[Array[Byte]],
+                                        isLocal: Boolean): SparkEnv = {
     val env = create(
       conf,
       executorId,
@@ -212,19 +224,33 @@ object SparkEnv extends Logging {
   }
 
   /**
-   * Helper method to create a SparkEnv for a driver or an executor.
-   */
+    * Helper method to create a SparkEnv for a driver or an executor.
+    */
+  /**
+    * 真正的创建spark env的方法。
+    * @param conf
+    * @param executorId
+    * @param bindAddress
+    * @param advertiseAddress
+    * @param port
+    * @param isLocal
+    * @param numUsableCores
+    * @param ioEncryptionKey
+    * @param listenerBus
+    * @param mockOutputCommitCoordinator
+    * @return
+    */
   private def create(
-      conf: SparkConf,
-      executorId: String,
-      bindAddress: String,
-      advertiseAddress: String,
-      port: Int,
-      isLocal: Boolean,
-      numUsableCores: Int,
-      ioEncryptionKey: Option[Array[Byte]],
-      listenerBus: LiveListenerBus = null,
-      mockOutputCommitCoordinator: Option[OutputCommitCoordinator] = None): SparkEnv = {
+                      conf: SparkConf,
+                      executorId: String,
+                      bindAddress: String,
+                      advertiseAddress: String,
+                      port: Int,
+                      isLocal: Boolean,
+                      numUsableCores: Int,
+                      ioEncryptionKey: Option[Array[Byte]],
+                      listenerBus: LiveListenerBus = null,
+                      mockOutputCommitCoordinator: Option[OutputCommitCoordinator] = None): SparkEnv = {
 
     val isDriver = executorId == SparkContext.DRIVER_IDENTIFIER
 
@@ -290,8 +316,8 @@ object SparkEnv extends Logging {
     val closureSerializer = new JavaSerializer(conf)
 
     def registerOrLookupEndpoint(
-        name: String, endpointCreator: => RpcEndpoint):
-      RpcEndpointRef = {
+                                  name: String, endpointCreator: => RpcEndpoint):
+    RpcEndpointRef = {
       if (isDriver) {
         logInfo("Registering " + name)
         rpcEnv.setupEndpoint(name, endpointCreator)
@@ -400,16 +426,16 @@ object SparkEnv extends Logging {
   }
 
   /**
-   * Return a map representation of jvm information, Spark properties, system properties, and
-   * class paths. Map keys define the category, and map values represent the corresponding
-   * attributes as a sequence of KV pairs. This is used mainly for SparkListenerEnvironmentUpdate.
-   */
+    * Return a map representation of jvm information, Spark properties, system properties, and
+    * class paths. Map keys define the category, and map values represent the corresponding
+    * attributes as a sequence of KV pairs. This is used mainly for SparkListenerEnvironmentUpdate.
+    */
   private[spark]
   def environmentDetails(
-      conf: SparkConf,
-      schedulingMode: String,
-      addedJars: Seq[String],
-      addedFiles: Seq[String]): Map[String, Seq[(String, String)]] = {
+                          conf: SparkConf,
+                          schedulingMode: String,
+                          addedJars: Seq[String],
+                          addedFiles: Seq[String]): Map[String, Seq[(String, String)]] = {
 
     import Properties._
     val jvmInformation = Seq(
@@ -421,11 +447,11 @@ object SparkEnv extends Logging {
     // Spark properties
     // This includes the scheduling mode whether or not it is configured (used by SparkUI)
     val schedulerMode =
-      if (!conf.contains("spark.scheduler.mode")) {
-        Seq(("spark.scheduler.mode", schedulingMode))
-      } else {
-        Seq[(String, String)]()
-      }
+    if (!conf.contains("spark.scheduler.mode")) {
+      Seq(("spark.scheduler.mode", schedulingMode))
+    } else {
+      Seq[(String, String)]()
+    }
     val sparkProperties = (conf.getAll ++ schedulerMode).sorted
 
     // System properties that are not java classpaths
