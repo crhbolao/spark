@@ -261,7 +261,8 @@ class SparkContext(config: SparkConf) extends Logging {
   // This function allows components created by SparkEnv to be mocked in unit tests:
   /**
     * 用来初始化sparkEnv环境
-    * @param conf   saprkContext
+    *
+    * @param conf saprkContext
     * @param isLocal
     * @param listenerBus
     * @return
@@ -517,14 +518,21 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // We need to register "HeartbeatReceiver" before "createTaskScheduler" because Executor will
     // retrieve "HeartbeatReceiver" in the constructor. (SPARK-6640)
+    /**
+      * 用来创建心跳接收器，使用Sparkenv的子组件NettyRpcEnv的setUpEndpoint方法。向RpcEnv的Dispatcher中注册方法。
+      */
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Create and start the scheduler
+    /**
+      * 首先是构建taskscheduler，然后在构建DAGScheduler。
+      */
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
     _dagScheduler = new DAGScheduler(this)
+    // 向_heartbeatReceiver发送TaskSchedulerIsSet，表示已经将信息添加到自身的scheduler中。
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
@@ -538,14 +546,24 @@ class SparkContext(config: SparkConf) extends Logging {
       System.setProperty("spark.ui.proxyBase", "/proxy/" + _applicationId)
     }
     _ui.foreach(_.setAppId(_applicationId))
+
+    /**
+      * SparkContext初始化过程中，会对 BlockManager进行初始化。
+      */
     _env.blockManager.initialize(_applicationId)
 
     // The metrics system for Driver need to be set spark.app.id to app ID.
     // So it should start after we get app ID from the task scheduler and set spark.app.id.
+    /**
+      * 启动度量系统
+      */
     _env.metricsSystem.start()
     // Attach the driver metrics servlet handler to the web ui after the metrics system is started.
     _env.metricsSystem.getServletHandlers.foreach(handler => ui.foreach(_.attachHandler(handler)))
 
+    /**
+      * 创建事件日志监听器
+      */
     _eventLogger =
       if (isEventLogEnabled) {
         val logger =
@@ -558,11 +576,16 @@ class SparkContext(config: SparkConf) extends Logging {
         None
       }
 
+    /**
+      * _executorAllocationManager是基于工作负载动态分配和删除Executor的代理。
+      */
     // Optionally scale number of executors dynamically based on workload. Exposed for testing.
+    // 调用utils工具类的isDaynamicAllocationEnabled方法来判断是否需要启用动态分配executor
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
         schedulerBackend match {
+            // 匹配实现 executoeAllocationClient
           case b: ExecutorAllocationClient =>
             Some(new ExecutorAllocationManager(
               schedulerBackend.asInstanceOf[ExecutorAllocationClient], listenerBus, _conf))
