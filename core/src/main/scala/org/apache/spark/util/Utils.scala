@@ -2456,6 +2456,11 @@ private[spark] object Utils extends Logging {
   /**
    * Return whether dynamic allocation is enabled in the given conf.
    */
+  /**
+    * 调用utils工具类的isDaynamicAllocationEnabled方法来判断是否需要启用动态分配executor机器。
+    * @param conf
+    * @return
+    */
   def isDynamicAllocationEnabled(conf: SparkConf): Boolean = {
     val dynamicAllocationEnabled = conf.getBoolean("spark.dynamicAllocation.enabled", false)
     dynamicAllocationEnabled &&
