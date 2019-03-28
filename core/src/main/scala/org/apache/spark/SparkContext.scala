@@ -422,7 +422,12 @@ class SparkContext(config: SparkConf) extends Logging {
 
     _conf.set("spark.executor.id", SparkContext.DRIVER_IDENTIFIER)
 
+    /**
+      * 在sparkContext的初始化过程中会读取用户指定的jar文件或者其他文件
+      */
+    // 读取用户设置的jar文件
     _jars = Utils.getUserJars(_conf)
+    // 读取用户设置的其他文件
     _files = _conf.getOption("spark.files").map(_.split(",")).map(_.filter(_.nonEmpty))
       .toSeq.flatten
 
@@ -585,7 +590,7 @@ class SparkContext(config: SparkConf) extends Logging {
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
         schedulerBackend match {
-            // 匹配实现 executoeAllocationClient
+          // 匹配实现 executoeAllocationClient
           case b: ExecutorAllocationClient =>
             Some(new ExecutorAllocationManager(
               schedulerBackend.asInstanceOf[ExecutorAllocationClient], listenerBus, _conf))
@@ -597,6 +602,9 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     _executorAllocationManager.foreach(_.start())
 
+    /**
+      * 用来清理哪些超出应用范围的RDD.
+      */
     _cleaner =
       if (_conf.getBoolean("spark.cleaner.referenceTracking", true)) {
         Some(new ContextCleaner(this))
@@ -605,12 +613,17 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     _cleaner.foreach(_.start())
 
+    // 添加用户自定义sparkListener的地方
     setupAndStartListenerBus()
+    // 调用postEnvironmentUpdate用来更新环境
     postEnvironmentUpdate()
+    // 向事件总线投递spaekListenerApplicationStart事件（即应用启动事件）
     postApplicationStart()
 
     // Post init
+    // 等待SchedulerBackend准备完成。
     _taskScheduler.postStartHook()
+    // 向度量系统注册DAGSchedulerSource、BlockManagerSource及ExecutorAllocation ManagerSource。
     _env.metricsSystem.registerSource(_dagScheduler.metricsSource)
     _env.metricsSystem.registerSource(new BlockManagerSource(_env.blockManager))
     _executorAllocationManager.foreach { e =>
@@ -1755,6 +1768,11 @@ class SparkContext(config: SparkConf) extends Logging {
     * The `path` passed can be either a local file, a file in HDFS (or other Hadoop-supported
     * filesystems), an HTTP, HTTPS or FTP URI, or local:/path for a file on every worker node.
     */
+  /**
+    * 将jar文件添加到Driver的RPC环境中。
+    *
+    * @param path
+    */
   def addJar(path: String) {
     if (path == null) {
       logWarning("null specified as parameter to addJar")
@@ -2259,8 +2277,10 @@ class SparkContext(config: SparkConf) extends Logging {
       val schedulingMode = getSchedulingMode.toString
       val addedJarPaths = addedJars.keys.toSeq
       val addedFilePaths = addedFiles.keys.toSeq
+      // 将环境的jvm参数、spark属性、系统属性、classpath等信息设置为环境明细信息.
       val environmentDetails = SparkEnv.environmentDetails(conf, schedulingMode, addedJarPaths,
         addedFilePaths)
+      // 生成事件SparkListenerEnvironmentUpdate（此事件携带环境明细信息）并投递到事件总线listenerBus.
       val environmentUpdate = SparkListenerEnvironmentUpdate(environmentDetails)
       listenerBus.post(environmentUpdate)
     }

@@ -2538,8 +2538,15 @@ private[spark] object Utils extends Logging {
    * "spark.yarn.dist.jars" properties, while in other modes it returns the jar files pointed by
    * only the "spark.jars" property.
    */
+  /**
+    * 通过配置文件获取用户设置的jar文件
+    * @param conf
+    * @param isShell
+    * @return
+    */
   def getUserJars(conf: SparkConf, isShell: Boolean = false): Seq[String] = {
     val sparkJars = conf.getOption("spark.jars")
+    // 如果是yarn模式，除了获取spark.jars对应的jar文件，还会获取spark.yarn.dist.jars的文件。（其是spark.jars 和 spark.yarn.dist.jars 的并集）
     if (conf.get("spark.master") == "yarn" && isShell) {
       val yarnJars = conf.getOption("spark.yarn.dist.jars")
       unionFileLists(sparkJars, yarnJars).toSeq
