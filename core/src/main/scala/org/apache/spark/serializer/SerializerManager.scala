@@ -30,19 +30,36 @@ import org.apache.spark.storage._
 import org.apache.spark.util.io.{ChunkedByteBuffer, ChunkedByteBufferOutputStream}
 
 /**
- * Component which configures serialization, compression and encryption for various Spark
- * components, including automatic selection of which [[Serializer]] to use for shuffles.
- */
+  * Component which configures serialization, compression and encryption for various Spark
+  * components, including automatic selection of which [[Serializer]] to use for shuffles.
+  */
+/**
+  * 构造器初始化
+  *
+  * @param defaultSerializer 默认的序列化器。默认的是 JavaSerivlizer
+  * @param conf              sparkconf
+  * @param encryptionKey     加密使用的密匙
+  */
 private[spark] class SerializerManager(
-    defaultSerializer: Serializer,
-    conf: SparkConf,
-    encryptionKey: Option[Array[Byte]]) {
+                                        defaultSerializer: Serializer,
+                                        conf: SparkConf,
+                                        encryptionKey: Option[Array[Byte]]) {
 
   def this(defaultSerializer: Serializer, conf: SparkConf) = this(defaultSerializer, conf, None)
 
+  /**
+    * spark 提供的另一种序列化器
+    */
   private[this] val kryoSerializer = new KryoSerializer(conf)
 
+  /**
+    * 字符串类型标记
+    */
   private[this] val stringClassTag: ClassTag[String] = implicitly[ClassTag[String]]
+
+  /**
+    * 原生类型及原生类型数组的类型标记的集合
+    */
   private[this] val primitiveAndPrimitiveArrayClassTags: Set[ClassTag[_]] = {
     val primitiveClassTags = Set[ClassTag[_]](
       ClassTag.Boolean,
@@ -60,12 +77,24 @@ private[spark] class SerializerManager(
   }
 
   // Whether to compress broadcast variables that are stored
+  /**
+    * 是否对广播对象进行压缩
+    */
   private[this] val compressBroadcast = conf.getBoolean("spark.broadcast.compress", true)
   // Whether to compress shuffle output that are stored
+  /**
+    * 是否对shuffle输出数据压缩
+    */
   private[this] val compressShuffle = conf.getBoolean("spark.shuffle.compress", true)
   // Whether to compress RDD partitions that are stored serialized
+  /**
+    * 是否对RDD压缩。
+    */
   private[this] val compressRdds = conf.getBoolean("spark.rdd.compress", false)
   // Whether to compress shuffle output temporarily spilled to disk
+  /**
+    * 是否对溢出到磁盘的shuffle数据压缩。
+    */
   private[this] val compressShuffleSpill = conf.getBoolean("spark.shuffle.spill.compress", true)
 
   /* The compression codec to use. Note that the "lazy" val is necessary because we want to delay
@@ -73,10 +102,24 @@ private[spark] class SerializerManager(
    * program could be using a user-defined codec in a third party jar, which is loaded in
    * Executor.updateDependencies. When the BlockManager is initialized, user level jars hasn't been
    * loaded yet. */
+  /**
+    * 使用的压缩编码器，其中是通过lazy关键字修饰为延迟初始化，即等到真正使用时才对其初始化。
+    */
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
+  /**
+    * 当前 SerializerManager是否支持加密。
+    *
+    * @return
+    */
   def encryptionEnabled: Boolean = encryptionKey.isDefined
 
+  /**
+    * 对于制定类型，是否能使用kryoSerializer进行序列化
+    *
+    * @param ct
+    * @return
+    */
   def canUseKryo(ct: ClassTag[_]): Boolean = {
     primitiveAndPrimitiveArrayClassTags.contains(ct) || ct == stringClassTag
   }
@@ -84,6 +127,12 @@ private[spark] class SerializerManager(
   // SPARK-18617: As feature in SPARK-13990 can not be applied to Spark Streaming now. The worst
   // result is streaming job based on `Receiver` mode can not run on Spark 2.x properly. It may be
   // a rational choice to close `kryo auto pick` feature for streaming in the first step.
+  /**
+    * 获取序列化器
+    * @param ct
+    * @param autoPick
+    * @return
+    */
   def getSerializer(ct: ClassTag[_], autoPick: Boolean): Serializer = {
     if (autoPick && canUseKryo(ct)) {
       kryoSerializer
@@ -93,8 +142,8 @@ private[spark] class SerializerManager(
   }
 
   /**
-   * Pick the best serializer for shuffling an RDD of key-value pairs.
-   */
+    * Pick the best serializer for shuffling an RDD of key-value pairs.
+    */
   def getSerializer(keyClassTag: ClassTag[_], valueClassTag: ClassTag[_]): Serializer = {
     if (canUseKryo(keyClassTag) && canUseKryo(valueClassTag)) {
       kryoSerializer
@@ -115,22 +164,22 @@ private[spark] class SerializerManager(
   }
 
   /**
-   * Wrap an input stream for encryption and compression
-   */
+    * Wrap an input stream for encryption and compression
+    */
   def wrapStream(blockId: BlockId, s: InputStream): InputStream = {
     wrapForCompression(blockId, wrapForEncryption(s))
   }
 
   /**
-   * Wrap an output stream for encryption and compression
-   */
+    * Wrap an output stream for encryption and compression
+    */
   def wrapStream(blockId: BlockId, s: OutputStream): OutputStream = {
     wrapForCompression(blockId, wrapForEncryption(s))
   }
 
   /**
-   * Wrap an input stream for encryption if shuffle encryption is enabled
-   */
+    * Wrap an input stream for encryption if shuffle encryption is enabled
+    */
   def wrapForEncryption(s: InputStream): InputStream = {
     encryptionKey
       .map { key => CryptoStreamUtils.createCryptoInputStream(s, conf, key) }
@@ -138,8 +187,8 @@ private[spark] class SerializerManager(
   }
 
   /**
-   * Wrap an output stream for encryption if shuffle encryption is enabled
-   */
+    * Wrap an output stream for encryption if shuffle encryption is enabled
+    */
   def wrapForEncryption(s: OutputStream): OutputStream = {
     encryptionKey
       .map { key => CryptoStreamUtils.createCryptoOutputStream(s, conf, key) }
@@ -147,24 +196,24 @@ private[spark] class SerializerManager(
   }
 
   /**
-   * Wrap an output stream for compression if block compression is enabled for its block type
-   */
+    * Wrap an output stream for compression if block compression is enabled for its block type
+    */
   private[this] def wrapForCompression(blockId: BlockId, s: OutputStream): OutputStream = {
     if (shouldCompress(blockId)) compressionCodec.compressedOutputStream(s) else s
   }
 
   /**
-   * Wrap an input stream for compression if block compression is enabled for its block type
-   */
+    * Wrap an input stream for compression if block compression is enabled for its block type
+    */
   private[this] def wrapForCompression(blockId: BlockId, s: InputStream): InputStream = {
     if (shouldCompress(blockId)) compressionCodec.compressedInputStream(s) else s
   }
 
   /** Serializes into a stream. */
   def dataSerializeStream[T: ClassTag](
-      blockId: BlockId,
-      outputStream: OutputStream,
-      values: Iterator[T]): Unit = {
+                                        blockId: BlockId,
+                                        outputStream: OutputStream,
+                                        values: Iterator[T]): Unit = {
     val byteStream = new BufferedOutputStream(outputStream)
     val autoPick = !blockId.isInstanceOf[StreamBlockId]
     val ser = getSerializer(implicitly[ClassTag[T]], autoPick).newInstance()
@@ -178,9 +227,9 @@ private[spark] class SerializerManager(
 
   /** Serializes into a chunked byte buffer. */
   def dataSerializeWithExplicitClassTag(
-      blockId: BlockId,
-      values: Iterator[_],
-      classTag: ClassTag[_]): ChunkedByteBuffer = {
+                                         blockId: BlockId,
+                                         values: Iterator[_],
+                                         classTag: ClassTag[_]): ChunkedByteBuffer = {
     val bbos = new ChunkedByteBufferOutputStream(1024 * 1024 * 4, ByteBuffer.allocate)
     val byteStream = new BufferedOutputStream(bbos)
     val autoPick = !blockId.isInstanceOf[StreamBlockId]
@@ -190,13 +239,13 @@ private[spark] class SerializerManager(
   }
 
   /**
-   * Deserializes an InputStream into an iterator of values and disposes of it when the end of
-   * the iterator is reached.
-   */
+    * Deserializes an InputStream into an iterator of values and disposes of it when the end of
+    * the iterator is reached.
+    */
   def dataDeserializeStream[T](
-      blockId: BlockId,
-      inputStream: InputStream)
-      (classTag: ClassTag[T]): Iterator[T] = {
+                                blockId: BlockId,
+                                inputStream: InputStream)
+                              (classTag: ClassTag[T]): Iterator[T] = {
     val stream = new BufferedInputStream(inputStream)
     val autoPick = !blockId.isInstanceOf[StreamBlockId]
     getSerializer(classTag, autoPick)

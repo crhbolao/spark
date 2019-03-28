@@ -57,11 +57,17 @@ private[spark] object CompressionCodec {
     "lzf" -> classOf[LZFCompressionCodec].getName,
     "snappy" -> classOf[SnappyCompressionCodec].getName)
 
+  /**
+    * 通过其中的变量 "spark.io.compression.codec" 获取需要的编解码器名称。
+    * @param conf
+    * @return
+    */
   def getCodecName(conf: SparkConf): String = {
     conf.get(configKey, DEFAULT_COMPRESSION_CODEC)
   }
 
   def createCodec(conf: SparkConf): CompressionCodec = {
+    // getCodecName 通过其中的变量 "spark.io.compression.codec" 获取需要的编解码器名称。
     createCodec(conf, getCodecName(conf))
   }
 
