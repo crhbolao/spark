@@ -31,6 +31,7 @@ private[spark] class TorrentBroadcastFactory extends BroadcastFactory {
   override def initialize(isDriver: Boolean, conf: SparkConf, securityMgr: SecurityManager) { }
 
   override def newBroadcast[T: ClassTag](value_ : T, isLocal: Boolean, id: Long): Broadcast[T] = {
+    // TorrentBroadcast 广播实例
     new TorrentBroadcast[T](value_, id)
   }
 

@@ -24,18 +24,33 @@ import scala.reflect.ClassTag
 import org.apache.spark.{SecurityManager, SparkConf}
 import org.apache.spark.internal.Logging
 
+/**
+  * 广播管理器 BroadcastManager 初始化
+  *
+  * @param isDriver        是否是driver
+  * @param conf            spark conf
+  * @param securityManager 安全管理器
+  */
 private[spark] class BroadcastManager(
-    val isDriver: Boolean,
-    conf: SparkConf,
-    securityManager: SecurityManager)
+                                       val isDriver: Boolean,
+                                       conf: SparkConf,
+                                       securityManager: SecurityManager)
   extends Logging {
-
+  /**
+    * 用来表示 BroadcastManager 是否初始化完成
+    */
   private var initialized = false
+  /**
+    * 广播工厂实例
+    */
   private var broadcastFactory: BroadcastFactory = null
 
   initialize()
 
   // Called by SparkContext or Executor before using Broadcast
+  /**
+    * 自身 BroadcastManager的初始化方法
+    */
   private def initialize() {
     synchronized {
       if (!initialized) {
@@ -50,6 +65,9 @@ private[spark] class BroadcastManager(
     broadcastFactory.stop()
   }
 
+  /**
+    * 下一个广播对象的广播ID，类型为 AtomicLong.
+    */
   private val nextBroadcastId = new AtomicLong(0)
 
   def newBroadcast[T: ClassTag](value_ : T, isLocal: Boolean): Broadcast[T] = {
