@@ -64,7 +64,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
     * On the driver, if the value is required, it is read lazily from the block manager.
     */
   /**
-    * 在需要的时候才会调用，
+    * 当 TorrentBroadcast 实例的_value属性值在需要的时候，才会调用 readBroadcastBlock 方法获取值。
     */
   @transient private lazy val _value: T = readBroadcastBlock()
 
@@ -172,10 +172,17 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
   }
 
   /** Fetch torrent blocks from the driver and/or other executors. */
+  /**
+    * 调用 readBlocks方法从Driver，Executor的存储体系中获取块。
+    *
+    * @return
+    */
   private def readBlocks(): Array[ChunkedByteBuffer] = {
     // Fetch chunks of data. Note that all these chunks are stored in the BlockManager and reported
     // to the driver, so other executors can pull these chunks from this executor as well.
+    // 新建数组，用来存储每个分片广播块。
     val blocks = new Array[ChunkedByteBuffer](numBlocks)
+    // 获取当前SparkEnv 的 BlockManager组件
     val bm = SparkEnv.get.blockManager
 
     for (pid <- Random.shuffle(Seq.range(0, numBlocks))) {
@@ -184,15 +191,21 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
       // First try getLocalBytes because there is a chance that previous attempts to fetch the
       // broadcast blocks have already fetched some of the blocks. In that case, some blocks
       // would be available locally (on this executor).
+      // 使用blockManager的getLocalBytes方法从本地的存储体系中获取序列化的分片广播块。
       bm.getLocalBytes(pieceId) match {
         case Some(block) =>
+          // 如果本地可以获取到，则将分片广播块放入blocks，并且调用releaseLock方法释放此分片广播块的锁。
           blocks(pid) = block
           releaseLock(pieceId)
         case None =>
+          // 如果本地没有，则调用BlockManager 的 getRemoteBytes方法从远端的存储体系中获取分片广播块。
           bm.getRemoteBytes(pieceId) match {
             case Some(b) =>
+              // 判断是否用来计算校验和。
               if (checksumEnabled) {
+                // 用来获取存入checksums数组的校验和。
                 val sum = calcChecksum(b.chunks(0))
+                // 如果校验和不相同，说明块的数据有损坏，此时会抛出异常。
                 if (sum != checksums(pid)) {
                   throw new SparkException(s"corrupt remote block $pieceId of $broadcastId:" +
                     s" $sum != ${checksums(pid)}")
@@ -200,6 +213,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
               }
               // We found the block from remote executors/driver's BlockManager, so put the block
               // in this executor's BlockManager.
+              // 如果校验和相同，则调用BlockManager的putBytes方法将分片广播块写入本地存储体系中。
               if (!bm.putBytes(pieceId, b, StorageLevel.MEMORY_AND_DISK_SER, tellMaster = true)) {
                 throw new SparkException(
                   s"Failed to store $pieceId of $broadcastId in local BlockManager")
@@ -210,11 +224,18 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
           }
       }
     }
+    // 返回blocks中的所有分片广播。
     blocks
   }
 
   /**
     * Remove all persisted state associated with this Torrent broadcast on the executors.
+    */
+  /**
+    * 对由 id 标记的广播对象去持久化
+    *
+    *
+    * @param blocking
     */
   override protected def doUnpersist(blocking: Boolean) {
     TorrentBroadcast.unpersist(id, removeFromDriver = false, blocking)
@@ -235,22 +256,26 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
   }
 
   /**
-    * 在需要的时候才会调用
+    * 当 TorrentBroadcast 实例的_value属性值在需要的时候，才会调用 readBroadcastBlock 方法获取值。
     *
     * @return
     */
   private def readBroadcastBlock(): T = Utils.tryOrIOException {
     TorrentBroadcast.synchronized {
       setConf(SparkEnv.get.conf)
+      // 获取当前SparkEnv的BlockManager组件
       val blockManager = SparkEnv.get.blockManager
+      // 调用BlockManager的getLocalValues方法从本地的存储系统中获取广播对象。
       blockManager.getLocalValues(broadcastId).map(_.data.next()) match {
         case Some(x) =>
+          // 如果从本地的存储体系中可以获取广播对象，则调用releaseLock方法（这个锁保证当块被一个运行中的任务使用时，不能被其他任务再次使用）
           releaseLock(broadcastId)
           x.asInstanceOf[T]
-
+        // 如果从本地的存储系统中没有获取到广播对象，那说明数据是通过BlockManager的putBytes方法以序列化方式写入存储体系中。
         case None =>
           logInfo("Started reading broadcast variable " + id)
           val startTimeMs = System.currentTimeMillis()
+          // 需要调用readBlocks方法从Driver 或 Executor的存储体系中获取广播块。
           val blocks = readBlocks().flatMap(_.getChunks())
           logInfo("Reading broadcast variable " + id + " took" + Utils.getUsedTimeMs(startTimeMs))
 
